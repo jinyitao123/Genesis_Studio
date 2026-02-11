@@ -1,0 +1,14 @@
+name: runbook-automation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  runbooks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dry-run query-api recovery runbook
+        run: DRY_RUN=1 bash ops/runbooks/recover_query_api.sh
+      - name: Dry-run redis backlog recovery runbook
+        run: DRY_RUN=1 bash ops/runbooks/recover_redis_backlog.sh

@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-api
+spec:
+  replicas: {{ .Values.queryApi.replicas }}
+  selector:
+    matchLabels:
+      app: query-api
+  template:
+    metadata:
+      labels:
+        app: query-api
+    spec:
+      containers:
+        - name: query-api
+          image: {{ .Values.queryApi.image }}
+          command: ["python", "run.py"]
+          ports:
+            - containerPort: 5000

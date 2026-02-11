@@ -1,0 +1,22 @@
+name: perf-chaos-gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  perf-chaos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install runtime dependencies
+        run: pip install requests
+      - name: Start compose services for chaos gate
+        run: docker compose up -d --build query-api command-api neo4j redis
+      - name: Run chaos gate script
+        run: bash perf/chaos_gate.sh
+      - name: Run k6 performance gate
+        run: docker run --rm --network host -v "$PWD/perf:/perf" grafana/k6:0.52.0 run /perf/k6_smoke.js

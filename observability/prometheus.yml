@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: query-api
+    metrics_path: /api/metrics
+    static_configs:
+      - targets: ["query-api:5000"]
+
+  - job_name: command-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["command-api:8000"]
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8888"]

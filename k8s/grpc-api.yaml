@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grpc-api
+  namespace: genesis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grpc-api
+  template:
+    metadata:
+      labels:
+        app: grpc-api
+    spec:
+      containers:
+        - name: grpc-api
+          image: genesis_studio-grpc-api:latest
+          command: ["python", "run_grpc.py"]
+          ports:
+            - containerPort: 50051
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grpc-api
+  namespace: genesis
+spec:
+  selector:
+    app: grpc-api
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: 50051

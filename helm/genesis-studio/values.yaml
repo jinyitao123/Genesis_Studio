@@ -1,0 +1,21 @@
+queryApi:
+  image: genesis_studio-query-api:latest
+  replicas: 2
+commandApi:
+  image: genesis_studio-command-api:latest
+  replicas: 2
+gateway:
+  image: nginx:1.27
+  replicas: 2
+worker:
+  image: genesis_studio-worker:latest
+  replicas: 1
+grpcApi:
+  image: genesis_studio-grpc-api:latest
+  replicas: 1
+neo4j:
+  image: neo4j:5.26
+redis:
+  image: redis:7.4
+postgres:
+  image: postgres:16

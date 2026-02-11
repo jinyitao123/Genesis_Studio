@@ -1,0 +1,14 @@
+{
+  "title": "Genesis Studio Overview",
+  "panels": [
+    {
+      "title": "HTTP Requests Total",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "genesis_http_requests_total"
+        }
+      ]
+    }
+  ]
+}

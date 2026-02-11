@@ -1,0 +1,236 @@
+services:
+  frontend:
+    image: node:20-alpine
+    container_name: genesis-frontend
+    restart: unless-stopped
+    working_dir: /workspace/frontend
+    command: ["sh", "-c", "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"]
+    volumes:
+      - ./:/workspace
+    environment:
+      VITE_API_BASE: http://localhost:18080
+    ports:
+      - "5173:5173"
+
+  gateway:
+    image: nginx:1.27
+    container_name: genesis-gateway
+    restart: unless-stopped
+    ports:
+      - "18080:8080"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      query-api:
+        condition: service_started
+      command-api:
+        condition: service_started
+
+  query-api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: genesis-query-api
+    restart: unless-stopped
+    command: ["python", "run.py"]
+    ports:
+      - "5000:5000"
+    environment:
+      ENV_FILE: /app/.env.example
+      NEO4J_URI: bolt://neo4j:7687
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      ENABLE_OTEL_EXPORTER: "true"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  command-api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: genesis-command-api
+    restart: unless-stopped
+    command: ["python", "run_command.py"]
+    ports:
+      - "8000:8000"
+    environment:
+      ENV_FILE: /app/.env.example
+      NEO4J_URI: bolt://neo4j:7687
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      ENABLE_OTEL_EXPORTER: "true"
+      GRPC_TARGET: grpc-api:50051
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: genesis-worker
+    restart: unless-stopped
+    command: ["celery", "-A", "backend.workers.celery_app.celery_app", "worker", "--loglevel=info"]
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      ENABLE_OTEL_EXPORTER: "true"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  grpc-api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: genesis-grpc-api
+    restart: unless-stopped
+    command: ["python", "run_grpc.py"]
+    ports:
+      - "50051:50051"
+    environment:
+      ENV_FILE: /app/.env.example
+      NEO4J_URI: bolt://neo4j:7687
+      REDIS_URL: redis://redis:6379/0
+      GRPC_PORT: 50051
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      ENABLE_OTEL_EXPORTER: "true"
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: genesis-prometheus
+    restart: unless-stopped
+    ports:
+      - "19090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      query-api:
+        condition: service_started
+      command-api:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: genesis-grafana
+    restart: unless-stopped
+    ports:
+      - "13000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      prometheus:
+        condition: service_started
+
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: genesis-loki
+    restart: unless-stopped
+    ports:
+      - "13100:3100"
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki-config.yaml:/etc/loki/local-config.yaml:ro
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: genesis-tempo
+    restart: unless-stopped
+    ports:
+      - "13200:3200"
+      - "14317:4317"
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    container_name: genesis-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    ports:
+      - "14318:4318"
+      - "18888:8888"
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    depends_on:
+      tempo:
+        condition: service_started
+      loki:
+        condition: service_started
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: genesis-promtail
+    restart: unless-stopped
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./observability/promtail-config.yaml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      loki:
+        condition: service_started
+
+  neo4j:
+    image: neo4j:5.26
+    container_name: genesis-neo4j
+    restart: unless-stopped
+    ports:
+      - "17687:7687"
+      - "17474:7474"
+    environment:
+      NEO4J_AUTH: neo4j/your_neo4j_password_here
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p your_neo4j_password_here \"RETURN 1\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4
+    container_name: genesis-redis
+    restart: unless-stopped
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16
+    container_name: genesis-postgres
+    restart: unless-stopped
+    ports:
+      - "15432:5432"
+    environment:
+      POSTGRES_USER: genesis
+      POSTGRES_PASSWORD: genesis
+      POSTGRES_DB: genesis
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U genesis -d genesis"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

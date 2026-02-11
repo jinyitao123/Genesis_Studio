@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: command-api
+  namespace: genesis
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: command-api
+  template:
+    metadata:
+      labels:
+        app: command-api
+    spec:
+      containers:
+        - name: command-api
+          image: genesis_studio-command-api:latest
+          command: ["python", "run_command.py"]
+          ports:
+            - containerPort: 8000
+          env:
+            - name: ENV_FILE
+              value: /app/.env.example
+            - name: NEO4J_URI
+              value: bolt://neo4j:7687
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: command-api
+  namespace: genesis
+spec:
+  selector:
+    app: command-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
