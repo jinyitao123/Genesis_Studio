@@ -68,6 +68,11 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/ontoflow',
+    name: 'ontoflow',
+    component: () => import('@/views/OntoFlowView.vue'),
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/',
   },

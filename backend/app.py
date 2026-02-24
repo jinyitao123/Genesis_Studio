@@ -20,9 +20,11 @@ def create_app() -> Flask:
     health_routes = import_module("backend.routes.health")
     compliance_routes = import_module("backend.routes.compliance")
     ontology_query_routes = import_module("backend.routes.ontology_query")
+    ontoflow_query_routes = import_module("backend.ontoflow.query_routes")
     app.register_blueprint(health_routes.health_bp)
     app.register_blueprint(compliance_routes.compliance_bp)
     app.register_blueprint(ontology_query_routes.ontology_query_bp)
+    app.register_blueprint(ontoflow_query_routes.ontoflow_query_bp)
 
     @app.get("/")
     def root():

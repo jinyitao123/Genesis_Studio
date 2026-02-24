@@ -10,3 +10,4 @@ export { useNotificationStore } from './useNotificationStore';
 export { useLineageStore } from './useLineageStore';
 export { useComplianceStore } from './useComplianceStore';
 export { useTimelineStore } from './useTimelineStore';
+export { useOntoFlowStore } from './useOntoFlowStore';

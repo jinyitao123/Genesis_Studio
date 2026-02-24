@@ -67,9 +67,11 @@ from .services import OntologyService
 from .services import SearchService
 from .services import TimeTravelService
 from .workers.celery_app import celery_app
+from .ontoflow.command_routes import ontoflow_command_router
 
 
 command_app = FastAPI(title="Genesis Studio Command API", version="0.1.0")
+command_app.include_router(ontoflow_command_router)
 security = HTTPBearer(auto_error=False)
 _migration_plans: dict[str, MigrationPlan] = {}
 _oidc_states: dict[str, dict[str, str | int]] = {}

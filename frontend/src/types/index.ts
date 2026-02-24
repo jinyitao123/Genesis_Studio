@@ -724,3 +724,59 @@ export interface WebSocketState {
   error: string | null;
   reconnectAttempts: number;
 }
+
+// =============================================================================
+// OntoFlow Basic — Types (PRP v1.1)
+// =============================================================================
+
+export interface OFProperty {
+  id: string;
+  name: string;
+  type: 'string' | 'number';
+  unique: boolean;
+}
+
+export interface OFClass {
+  id: string;
+  name: string;
+  description: string;
+  properties: OFProperty[];
+}
+
+export interface OFRelation {
+  id: string;
+  name: string;
+  source_class_id: string;
+  target_class_id: string;
+  description: string;
+}
+
+export interface OFOntology {
+  classes: OFClass[];
+  relations: OFRelation[];
+}
+
+export interface OFEntity {
+  id: string;
+  class_id: string;
+  properties: Record<string, string | number | boolean | null>;
+}
+
+export interface OFLink {
+  id: string;
+  source_entity_id: string;
+  target_entity_id: string;
+  relation_id: string;
+  label: string;
+}
+
+export interface OFGraph {
+  entities: OFEntity[];
+  links: OFLink[];
+}
+
+export interface OFCsvColumnMatch {
+  csv_column: string;
+  matched: boolean;
+  prop_name: string | null;
+}
