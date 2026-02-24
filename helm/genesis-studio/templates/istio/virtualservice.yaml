@@ -1,0 +1,52 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: genesis-query-api
+  namespace: genesis
+  labels:
+    app: query-api
+spec:
+  hosts:
+  - query-api
+  http:
+  - route:
+    - destination:
+        host: query-api
+        port:
+          number: 5000
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: genesis-command-api
+  namespace: genesis
+  labels:
+    app: command-api
+spec:
+  hosts:
+  - command-api
+  http:
+  - route:
+    - destination:
+        host: command-api
+        port:
+          number: 8000
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: genesis-grpc-api
+  namespace: genesis
+  labels:
+    app: grpc-api
+spec:
+  hosts:
+  - grpc-api
+  tcp:
+  - match:
+    - port: 50051
+    route:
+    - destination:
+        host: grpc-api
+        port:
+          number: 50051

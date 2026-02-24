@@ -1,0 +1,19 @@
+{
+  "include": [
+    "backend",
+    "tests",
+    "run.py"
+  ],
+  "exclude": [
+    "backend/grpc/generated"
+  ],
+  "typeCheckingMode": "basic",
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        "."
+      ]
+    }
+  ]
+}

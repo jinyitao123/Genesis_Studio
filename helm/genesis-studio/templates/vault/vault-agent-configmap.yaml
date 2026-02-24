@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-agent-config
+  namespace: genesis
+  labels:
+    app: vault-agent
+data:
+  vault-agent-config.hcl: |
+    pid_file = "/pid/file"
+
+    auto_auth {
+      method "kubernetes" {
+        mount_path = "auth/kubernetes"
+        config = {
+          role = "genesis-app"
+        }
+      }
+
+      sink "file" {
+        config = {
+          path = "/vault/secrets/token"
+        }
+      }
+    }
+
+    template {
+      source = "/etc/vault/secret-template.tpl"
+      destination = "/vault/secrets/secrets.yml"
+    }
+
+    template {
+      source = "/etc/vault/db-creds-template.tpl"
+      destination = "/vault/secrets/db-creds.yml"
+    }
+
+    cache {
+      use_auto_auth_token = true
+    }
+
+    listener "tcp" {
+      address = "127.0.0.1:8200"
+      tls_disable = "true"
+    }
+
+    vault {
+      address = "https://vault.vault.svc.cluster.local:8200"
+      tls_skip_verify = false
+      ca_cert = "/vault/tls/ca.crt"
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-secret-templates
+  namespace: genesis
+  labels:
+    app: vault-agent
+data:
+  secret-template.tpl: |
+    {{- with secret "secret/genesis/app" }}
+    NEO4J_URI: {{ .Data.neo4j_uri }}
+    NEO4J_USER: {{ .Data.neo4j_user }}
+    NEO4J_PASSWORD: {{ .Data.neo4j_password }}
+    REDIS_URL: {{ .Data.redis_url }}
+    AUTH_JWT_SECRET: {{ .Data.auth_jwt_secret }}
+    {{- end }}
+  db-creds-template.tpl: |
+    {{- with secret "database/creds/genesis-role" }}
+    DB_USERNAME: {{ .Data.username }}
+    DB_PASSWORD: {{ .Data.password }}
+    {{- end }}

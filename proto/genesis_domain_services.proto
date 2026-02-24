@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package genesis.domain;
+
+service OntologyService {
+  rpc ValidateSchema(ServiceRequest) returns (ServiceReply);
+}
+
+service ObjectService {
+  rpc UpsertObject(ServiceRequest) returns (ServiceReply);
+}
+
+service LinkService {
+  rpc Connect(ServiceRequest) returns (ServiceReply);
+}
+
+service TimeTravelService {
+  rpc Snapshot(ServiceRequest) returns (ServiceReply);
+}
+
+service SearchService {
+  rpc Search(ServiceRequest) returns (ServiceReply);
+}
+
+service AuthService {
+  rpc IssueServiceToken(ServiceRequest) returns (ServiceReply);
+}
+
+service NotificationService {
+  rpc Publish(ServiceRequest) returns (ServiceReply);
+}
+
+message ServiceRequest {
+  string request_id = 1;
+  map<string, string> attributes = 2;
+}
+
+message ServiceReply {
+  bool ok = 1;
+  string detail = 2;
+  map<string, string> data = 3;
+}

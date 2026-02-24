@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package genesis.contract;
+
+message HealthRequest {}
+
+message HealthReply {
+  string status = 1;
+  string service = 2;
+}
+
+message ProjectionRequest {
+  string actor = 1;
+}
+
+message ProjectionReply {
+  string projection_id = 1;
+  int32 object_type_count = 2;
+  int32 event_count = 3;
+}
+
+service CommandProjectionService {
+  rpc Health(HealthRequest) returns (HealthReply);
+  rpc CreateProjection(ProjectionRequest) returns (ProjectionReply);
+}

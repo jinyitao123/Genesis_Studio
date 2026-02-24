@@ -1,0 +1,76 @@
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: genesis-query-api
+  namespace: genesis
+  labels:
+    app: query-api
+spec:
+  host: query-api
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    loadBalancer:
+      simple: LEAST_REQUEST
+    tls:
+      mode: ISTIO_MUTUAL
+      subjectAltNames:
+      - spiffe://genesis.svc.namespace.svc.k8s.local
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: genesis-command-api
+  namespace: genesis
+  labels:
+    app: command-api
+spec:
+  host: command-api
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    loadBalancer:
+      simple: LEAST_REQUEST
+    tls:
+      mode: ISTIO_MUTUAL
+      subjectAltNames:
+      - spiffe://genesis.svc.namespace.svc.k8s.local
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: genesis-grpc-api
+  namespace: genesis
+  labels:
+    app: grpc-api
+spec:
+  host: grpc-api
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    loadBalancer:
+      simple: LEAST_REQUEST
+    tls:
+      mode: ISTIO_MUTUAL
+      subjectAltNames:
+      - spiffe://genesis.svc.namespace.svc.k8s.local

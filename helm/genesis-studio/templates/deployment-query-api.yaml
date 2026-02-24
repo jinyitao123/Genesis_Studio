@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: query-api
+  namespace: genesis
+  labels:
+    app: query-api
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: query-api
+  template:
+    metadata:
+      labels:
+        app: query-api
+        version: v1
+      annotations:
+        istio.io/rev: default
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "genesis-app"
+        vault.hashicorp.com/agent-cache-enable: "true"
+        vault.hashicorp.com/tls-skip-verify: "false"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: genesis-app
+      containers:
+      - name: query-api
+        image: genesis_studio-query-api:latest
+        ports:
+        - containerPort: 5000
+          protocol: TCP
+        env:
+        - name: VAULT_ADDR
+          value: https://vault.vault.svc.cluster.local:8200
+        - name: VAULT_CACERT
+          value: /vault/tls/ca.crt
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+        volumeMounts:
+        - name: vault-secrets
+          mountPath: /vault/secrets
+          readOnly: true
+        - name: vault-tls
+          mountPath: /vault/tls
+          readOnly: true
+      volumes:
+      - name: vault-secrets
+        emptyDir:
+          medium: Memory
+      - name: vault-tls
+        secret:
+          secretName: vault-tls-cert
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: query-api
+  namespace: genesis
+  labels:
+    app: query-api
+spec:
+  ports:
+  - port: 5000
+    targetPort: 5000
+    protocol: TCP
+    name: http
+  selector:
+    app: query-api

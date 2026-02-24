@@ -1,0 +1,24 @@
+groups:
+  - name: genesis-slo
+    rules:
+      - alert: GenesisQueryApiDown
+        expr: up{job="query-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Query API down
+      - alert: GenesisCommandApiDown
+        expr: up{job="command-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Command API down
+      - alert: GenesisHighRequestLatency
+        expr: histogram_quantile(0.95, sum(rate(genesis_http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High request latency

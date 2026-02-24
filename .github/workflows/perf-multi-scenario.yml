@@ -1,0 +1,20 @@
+name: perf-multi-scenario
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  perf-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Start compose services for perf suite
+        run: docker compose up -d --build query-api command-api worker neo4j redis
+      - name: k6 projection replay scenario
+        run: docker run --rm --network host -v "$PWD/perf:/perf" grafana/k6:0.52.0 run /perf/k6_projection_replay.js
+      - name: k6 lineage query scenario
+        run: docker run --rm --network host -v "$PWD/perf:/perf" grafana/k6:0.52.0 run /perf/k6_lineage_query.js

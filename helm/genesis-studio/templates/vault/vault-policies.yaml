@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vault-tls-cert
+  namespace: genesis
+type: Opaque
+data:
+  tls.crt: {{ .Values.vault.tls.cert | b64enc | quote }}
+  tls.key: {{ .Values.vault.tls.key | b64enc | quote }}
+  ca.crt: {{ .Values.vault.tls.ca_cert | b64enc | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-policies
+  namespace: genesis
+data:
+  genesis-app-policy.hcl: |
+    path "secret/genesis/*" {
+      capabilities = ["read", "list"]
+    }
+    
+    path "database/creds/genesis-role" {
+      capabilities = ["read"]
+    }
+    
+    path "transit/keys/audit-signing" {
+      capabilities = ["read", "sign"]
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-kubernetes-auth
+  namespace: genesis
+data:
+  genesis-role.yaml: |
+    - allowed_kubernetes_namespaces:
+      - genesis
+      - vault
+    kubernetes_role: genesis-app
+    kubernetes_service_account_name: genesis-app
+    policies:
+      - genesis-app-policy
+    target_namespace: genesis
+    ttl: 3600

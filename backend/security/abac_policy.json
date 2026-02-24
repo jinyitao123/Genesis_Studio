@@ -1,0 +1,36 @@
+{
+  "read": {
+    "object_type": {
+      "Admin": ["type_uri", "display_name", "parent_type", "tags", "created_at"],
+      "Designer": ["type_uri", "display_name", "parent_type", "tags", "created_at"],
+      "Operator": ["type_uri", "display_name", "tags", "created_at"],
+      "Viewer": ["type_uri", "display_name", "created_at"]
+    },
+    "event": {
+      "Admin": ["event_id", "action_id", "source_id", "target_id", "payload", "created_at"],
+      "Designer": ["event_id", "action_id", "source_id", "target_id", "payload", "created_at"],
+      "Operator": ["event_id", "action_id", "source_id", "target_id", "created_at"],
+      "Viewer": ["event_id", "action_id", "created_at"]
+    },
+    "transaction": {
+      "Admin": ["txn_id", "action_id", "actor", "status", "event_id", "compensation_event_id", "gates", "created_at", "reverted_at"],
+      "Designer": ["txn_id", "action_id", "actor", "status", "event_id", "compensation_event_id", "gates", "created_at", "reverted_at"],
+      "Operator": ["txn_id", "action_id", "status", "event_id", "compensation_event_id", "created_at", "reverted_at"],
+      "Viewer": ["txn_id", "action_id", "status", "created_at", "reverted_at"]
+    },
+    "bus_event": {
+      "Admin": ["stream_id", "event_id", "event_type", "txn_id", "correlation_id", "causation_id", "traceparent", "actor", "service", "created_at", "payload"],
+      "Designer": ["stream_id", "event_id", "event_type", "txn_id", "correlation_id", "causation_id", "traceparent", "actor", "service", "created_at", "payload"],
+      "Operator": ["stream_id", "event_id", "event_type", "txn_id", "correlation_id", "causation_id", "service", "created_at"],
+      "Viewer": ["event_type", "txn_id", "correlation_id", "service", "created_at"]
+    }
+  },
+  "write": {
+    "object_type": {
+      "Admin": ["type_uri", "display_name", "parent_type", "tags"],
+      "Designer": ["type_uri", "display_name", "parent_type", "tags"],
+      "Operator": ["type_uri", "display_name", "tags"],
+      "Viewer": []
+    }
+  }
+}

@@ -1,0 +1,279 @@
+# Genesis Studio Helm Chart - Production Environment Values
+# This file contains environment-specific configuration for production deployments
+
+global:
+  environment: production
+  domain: genesis-studio.io
+
+# Application Services Configuration
+queryApi:
+  enabled: true
+  replicas: 5
+  image:
+    repository: genesis_studio/query-api
+    tag: prod-latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  hpa:
+    minReplicas: 5
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+
+commandApi:
+  enabled: true
+  replicas: 5
+  image:
+    repository: genesis_studio/command-api
+    tag: prod-latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  hpa:
+    minReplicas: 5
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+
+worker:
+  enabled: true
+  replicas: 4
+  image:
+    repository: genesis_studio/worker
+    tag: prod-latest
+  concurrency: 8
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  hpa:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+
+grpcApi:
+  enabled: true
+  replicas: 3
+  image:
+    repository: genesis_studio/grpc-api
+    tag: prod-latest
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+  hpa:
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# Data Stores - Production with high availability
+neo4j:
+  enabled: true
+  replicas: 3
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 8Gi
+    limits:
+      cpu: 8000m
+      memory: 32Gi
+  persistence:
+    size: 500Gi
+    storageClass: fast-regional
+
+redis:
+  enabled: true
+  replicas: 6
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  persistence:
+    size: 50Gi
+    storageClass: fast-regional
+
+postgres:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+  persistence:
+    size: 200Gi
+    storageClass: fast-regional
+
+elasticsearch:
+  enabled: true
+  replicas: 5
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 16Gi
+  persistence:
+    size: 500Gi
+    storageClass: fast-regional
+
+timescaledb:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 16Gi
+  persistence:
+    size: 1000Gi
+    storageClass: fast-regional
+
+# Istio Configuration - Production with full security
+istio:
+  enabled: true
+  gateway:
+    replicas: 5
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+  sidecar:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  security:
+    strictMTLS: true
+    enableRateLimiting: true
+
+# Vault Configuration - Production
+vault:
+  enabled: true
+  address: https://vault.genesis-studio.io:8200
+  agent:
+    cacheSize: 2000
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+# Network Policies - Production (strict)
+networkPolicies:
+  enabled: true
+  ingress:
+    enabled: true
+    cidr: 10.0.0.0/8
+  egress:
+    enabled: true
+    allowed:
+      - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+        ports:
+        - port: 53
+          protocol: UDP
+        - port: 443
+          protocol: TCP
+
+# Observability - Production with full retention
+observability:
+  prometheus:
+    enabled: true
+    namespace: monitoring
+    retention: 30d
+    storageSize: 500Gi
+    storageClass: fast-regional
+  grafana:
+    enabled: true
+    persistence:
+      size: 100Gi
+      storageClass: fast-regional
+  loki:
+    enabled: true
+    persistence:
+      size: 500Gi
+      storageClass: fast-regional
+
+# Resource Overrides - Production limits
+resources:
+  limits:
+    cpu: 16000m
+    memory: 64Gi
+
+# Image Pull Secrets
+imagePullSecrets:
+  - name: docker-registry-secret
+  - name: gcr-readonly-secret
+
+# Node Selectors - Production nodes
+nodeSelector:
+  node-type: production
+  workload: compute-optimized
+
+# Affinity Rules - Production with high availability
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchLabels:
+          app: genesis-studio
+      topologyKey: kubernetes.io/hostname
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      preference:
+        matchExpressions:
+        - key: node-type
+          operator: In
+          values:
+          - production
+          - compute-optimized
+
+# Tolerations - Production nodes only
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "genesis-studio"
+    effect: "NoSchedule"
+
+# Pod Disruption Budgets
+podDisruptionBudget:
+  minAvailable: 2
+
+# Security Context - Production hardened
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
