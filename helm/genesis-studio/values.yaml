@@ -1,21 +1,272 @@
+# Genesis Studio Helm Values
+# Complete configuration for Istio Service Mesh + HashiCorp Vault Integration
+
+global:
+  namespace: genesis
+  environment: production
+  imagePullSecrets:
+    - name: registry-secret
+
+# Istio Configuration
+istio:
+  enabled: true
+  gateway:
+    name: genesis-gateway
+    hosts:
+      - "*"
+    tls:
+      enabled: true
+      port: 443
+      mode: SIMPLE
+      secretName: genesis-tls-cert
+      minProtocolVersion: TLSV1_2
+      maxProtocolVersion: TLSV1_3
+      cipherSuites:
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+    http:
+      enabled: true
+      port: 80
+      redirectToHttps: true
+    grpc:
+      enabled: true
+      port: 50051
+  sidecar:
+    enabled: true
+    autoInject: enabled
+    logLevel: info
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  ingressGateway:
+    replicas: 2
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+# Vault Configuration
+vault:
+  enabled: true
+  address: https://vault.vault.svc.cluster.local:8200
+  tls:
+    enabled: true
+    secretName: vault-tls-cert
+  agent:
+    enabled: true
+    cacheSize: 1000
+    logLevel: info
+  secrets:
+    - name: neo4j
+      path: secret/genesis/neo4j
+      keys:
+        - uri
+        - user
+        - password
+    - name: redis
+      path: secret/genesis/redis
+      keys:
+        - url
+    - name: jwt
+      path: secret/genesis/jwt
+      keys:
+        - secret
+        - algorithm
+    - name: database
+      path: database/creds/genesis-role
+      keys:
+        - username
+        - password
+
+# Application Services
 queryApi:
   image: genesis_studio-query-api:latest
-  replicas: 2
+  replicas: 3
+  port: 5000
+  istio:
+    enabled: true
+    annotations:
+      vault.hashicorp.com/agent-inject: "true"
+      vault.hashicorp.com/role: "genesis-app"
+      vault.hashicorp.com/agent-cache-enable: "true"
+      vault.hashicorp.com/tls-skip-verify: "false"
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
 commandApi:
   image: genesis_studio-command-api:latest
-  replicas: 2
-gateway:
-  image: nginx:1.27
-  replicas: 2
+  replicas: 3
+  port: 8000
+  istio:
+    enabled: true
+    annotations:
+      vault.hashicorp.com/agent-inject: "true"
+      vault.hashicorp.com/role: "genesis-app"
+      vault.hashicorp.com/agent-cache-enable: "true"
+      vault.hashicorp.com/tls-skip-verify: "false"
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
 worker:
   image: genesis_studio-worker:latest
-  replicas: 1
+  replicas: 2
+  istio:
+    enabled: true
+    annotations:
+      vault.hashicorp.com/agent-inject: "true"
+      vault.hashicorp.com/role: "genesis-app"
+      vault.hashicorp.com/agent-cache-enable: "true"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
 grpcApi:
   image: genesis_studio-grpc-api:latest
-  replicas: 1
+  replicas: 2
+  port: 50051
+  istio:
+    enabled: true
+    annotations:
+      vault.hashicorp.com/agent-inject: "true"
+      vault.hashicorp.com/role: "genesis-app"
+      vault.hashicorp.com/agent-cache-enable: "true"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# Data Stores
 neo4j:
   image: neo4j:5.26
+  replicas: 1
+  port: 7687
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 8Gi
+  persistence:
+    enabled: true
+    size: 50Gi
+
 redis:
   image: redis:7.4
+  replicas: 1
+  port: 6379
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  persistence:
+    enabled: true
+    size: 10Gi
+
 postgres:
   image: postgres:16
+  replicas: 1
+  port: 5432
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  persistence:
+    enabled: true
+    size: 20Gi
+
+elasticsearch:
+  image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+  replicas: 1
+  port: 9200
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  persistence:
+    enabled: true
+    size: 30Gi
+
+timescaledb:
+  image: timescale/timescaledb:latest-pg16
+  replicas: 1
+  port: 5432
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  persistence:
+    enabled: true
+    size: 30Gi
+
+# Observability
+prometheus:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+grafana:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Security
+networkPolicies:
+  enabled: true
+  denyByDefault: true
+
+tls:
+  enabled: true
+  secretName: genesis-tls-cert
+  certManager:
+    enabled: true
+    issuer: letsencrypt-prod

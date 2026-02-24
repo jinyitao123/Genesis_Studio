@@ -1,0 +1,179 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: genesis-query-api
+  namespace: monitoring
+  labels:
+    app: query-api
+    prometheus: main
+spec:
+  selector:
+    matchLabels:
+      app: query-api
+  namespaceSelector:
+    matchNames:
+      - genesis
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: genesis-command-api
+  namespace: monitoring
+  labels:
+    app: command-api
+    prometheus: main
+spec:
+  selector:
+    matchLabels:
+      app: command-api
+  namespaceSelector:
+    matchNames:
+      - genesis
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: genesis-worker
+  namespace: monitoring
+  labels:
+    app: worker
+    prometheus: main
+spec:
+  selector:
+    matchLabels:
+      app: worker
+  namespaceSelector:
+    matchNames:
+      - genesis
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: genesis-redis
+  namespace: monitoring
+  labels:
+    app: redis
+    prometheus: main
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  namespaceSelector:
+    matchNames:
+      - genesis
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: genesis-postgres
+  namespace: monitoring
+  labels:
+    app: postgres
+    prometheus: main
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  namespaceSelector:
+    matchNames:
+      - genesis
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: genesis-neo4j
+  namespace: monitoring
+  labels:
+    app: neo4j
+    prometheus: main
+spec:
+  selector:
+    matchLabels:
+      app: neo4j
+  namespaceSelector:
+    matchNames:
+      - genesis
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: genesis-elasticsearch
+  namespace: monitoring
+  labels:
+    app: elasticsearch
+    prometheus: main
+spec:
+  selector:
+    matchLabels:
+      app: elasticsearch
+  namespaceSelector:
+    matchNames:
+      - genesis
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: genesis-istio-ingress
+  namespace: monitoring
+  labels:
+    app: istio-ingress
+    prometheus: main
+spec:
+  selector:
+    matchLabels:
+      istio: istio-ingressgateway
+  namespaceSelector:
+    matchNames:
+      - istio-system
+  endpoints:
+  - port: http-monitoring
+    path: /stats/prometheus
+    interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: genesis-envoy
+  namespace: monitoring
+  labels:
+    app: envoy-sidecar
+    prometheus: main
+spec:
+  selector:
+    matchLabels:
+      istio: sidecar
+  namespaceSelector:
+    matchNames:
+      - genesis
+  podMetricsEndpoints:
+  - port: http-envoy-prom
+    path: /stats/prometheus
+    interval: 15s

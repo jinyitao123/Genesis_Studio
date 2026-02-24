@@ -1,14 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-
-type LineageAggregate = {
-  lineage: {
-    transaction: Record<string, unknown>;
-    primary_event: Record<string, unknown> | null;
-    compensation_event: Record<string, unknown> | null;
-  };
-  bus_events: Record<string, unknown>[];
-};
+import type { LineageAggregate } from "@/types";
 
 const props = defineProps<{
   aggregate: LineageAggregate | null;

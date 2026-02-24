@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grpc-api
+  namespace: genesis
+  labels:
+    app: grpc-api
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: grpc-api
+  template:
+    metadata:
+      labels:
+        app: grpc-api
+        version: v1
+      annotations:
+        istio.io/rev: default
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "genesis-app"
+        vault.hashicorp.com/agent-cache-enable: "true"
+        vault.hashicorp.com/tls-skip-verify: "false"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "50051"
+    spec:
+      serviceAccountName: genesis-app
+      containers:
+      - name: grpc-api
+        image: genesis_studio-grpc-api:latest
+        ports:
+        - containerPort: 50051
+          protocol: TCP
+          name: grpc
+        env:
+        - name: VAULT_ADDR
+          value: https://vault.vault.svc.cluster.local:8200
+        - name: VAULT_CACERT
+          value: /vault/tls/ca.crt
+        - name: GRPC_PORT
+          value: "50051"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        livenessProbe:
+          tcpSocket:
+            port: grpc
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          tcpSocket:
+            port: grpc
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+        volumeMounts:
+        - name: vault-secrets
+          mountPath: /vault/secrets
+          readOnly: true
+        - name: vault-tls
+          mountPath: /vault/tls
+          readOnly: true
+      volumes:
+      - name: vault-secrets
+        emptyDir:
+          medium: Memory
+      - name: vault-tls
+        secret:
+          secretName: vault-tls-cert
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grpc-api
+  namespace: genesis
+  labels:
+    app: grpc-api
+spec:
+  ports:
+  - port: 50051
+    targetPort: 50051
+    protocol: TCP
+    name: grpc
+  selector:
+    app: grpc-api

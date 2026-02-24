@@ -30,3 +30,32 @@ def apply_guardrails(prompt: str) -> GuardrailResult:
             sanitized = pattern.sub("[REDACTED]", sanitized)
 
     return GuardrailResult(allowed=len(reasons) == 0, reasons=reasons, sanitized_prompt=sanitized)
+
+
+def validate_prompt(prompt: str) -> dict[str, object]:
+    result = apply_guardrails(prompt)
+    return {
+        "allowed": result.allowed,
+        "reasons": result.reasons,
+        "sanitized_prompt": result.sanitized_prompt,
+    }
+
+
+def sanitize_input(value: str) -> str:
+    stripped = re.sub(r"<script.*?>.*?</script>", "", value, flags=re.IGNORECASE | re.DOTALL)
+    stripped = re.sub(r"on\w+\s*=\s*['\"].*?['\"]", "", stripped, flags=re.IGNORECASE)
+    return stripped.strip()
+
+
+def check_cypher_safety(cypher: str) -> dict[str, object]:
+    reasons: list[str] = []
+    banned = ["DETACH DELETE", "DELETE", "REMOVE", "DROP", "CALL dbms"]
+    upper_cypher = cypher.upper()
+    for token in banned:
+        if token in upper_cypher:
+            reasons.append(f"forbidden_token:{token}")
+
+    return {
+        "safe": len(reasons) == 0,
+        "reasons": reasons,
+    }

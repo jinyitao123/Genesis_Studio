@@ -1,0 +1,226 @@
+name: Deploy to Kubernetes with Istio & Vault
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'helm/**'
+      - 'ops/vault/**'
+      - '.github/workflows/deploy-istio-vault.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      vault_action:
+        description: 'Vault action to perform'
+        required: false
+        default: 'none'
+        type: choice
+        options:
+          - none
+          - init
+          - rotate-secrets
+          - audit
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.0'
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.28.0'
+
+      - name: Set up Istio
+        uses: istio/setup-istio@v3
+        with:
+          istio_version: '1.20.0'
+
+      - name: Install Istio CLI
+        run: |
+          curl -L https://istio.io/downloadIstio | sh -
+          cd istio-1.20.0
+          export PATH=$PWD/bin:$PATH
+          istioctl install --set profile=demo -y
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Label namespace for Istio
+        run: |
+          kubectl label namespace ${{ secrets.K8S_NAMESPACE }} istio-injection=enabled --overwrite
+
+      - name: Deploy Istio resources
+        run: |
+          kubectl apply -f helm/genesis-studio/templates/istio/ -n ${{ secrets.K8S_NAMESPACE }}
+
+      - name: Deploy NetworkPolicies
+        run: |
+          kubectl apply -f helm/genesis-studio/templates/network/ -n ${{ secrets.K8S_NAMESPACE }}
+
+      - name: Deploy Vault resources
+        run: |
+          kubectl apply -f helm/genesis-studio/templates/vault/ -n ${{ secrets.K8S_NAMESPACE }}
+          kubectl apply -f helm/genesis-studio/templates/secrets/ -n ${{ secrets.K8S_NAMESPACE }}
+
+      - name: Deploy applications
+        run: |
+          helm upgrade --install genesis-studio helm/genesis-studio \
+            --namespace ${{ secrets.K8S_NAMESPACE }} \
+            --create-namespace \
+            --values helm/genesis-studio/values.yaml \
+            --values helm/genesis-studio/values-${{ github.event.inputs.environment || 'staging' }}.yaml
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n ${{ secrets.K8S_NAMESPACE }}
+          kubectl get svc -n ${{ secrets.K8S_NAMESPACE }}
+          kubectl get gateway -n ${{ secrets.K8S_NAMESPACE }}
+
+      - name: Wait for pods to be ready
+        run: |
+          kubectl rollout status deployment/query-api -n ${{ secrets.K8S_NAMESPACE }} --timeout=300s
+          kubectl rollout status deployment/command-api -n ${{ secrets.K8S_NAMESPACE }} --timeout=300s
+
+      - name: Run health check
+        run: |
+          curl -f https://${{ secrets.EXTERNAL_DOMAIN }}/api/health || exit 1
+
+  vault-management:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    if: ${{ github.event.inputs.vault_action != 'none' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Vault CLI
+        uses: hashicorp/setup-vault@v3
+        with:
+          vault_version: '1.15.0'
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+
+      - name: Vault initialization
+        if: ${{ github.event.inputs.vault_action == 'init' }}
+        run: |
+          export VAULT_ADDR="https://${{ secrets.VAULT_ADDR }}"
+          export VAULT_TOKEN="${{ secrets.VAULT_TOKEN }}"
+          
+          # Enable secrets engines
+          vault secrets enable -path=secret kv-v2 2>/dev/null || true
+          vault secrets enable -path=database database 2>/dev/null || true
+          vault secrets enable -path=transit transit 2>/dev/null || true
+          vault auth enable kubernetes 2>/dev/null || true
+          
+          # Write secrets
+          vault kv put secret/genesis/app NEO4J_URI="${{ secrets.NEO4J_URI }}"
+          vault kv put secret/genesis/redis REDIS_URL="${{ secrets.REDIS_URL }}"
+          vault kv put secret/genesis/jwt JWT_SECRET="${{ secrets.JWT_SECRET }}"
+          
+          echo "Vault initialized successfully"
+
+      - name: Rotate secrets
+        if: ${{ github.event.inputs.vault_action == 'rotate-secrets' }}
+        run: |
+          export VAULT_ADDR="https://${{ secrets.VAULT_ADDR }}"
+          export VAULT_TOKEN="${{ secrets.VAULT_TOKEN }}"
+          
+          # Generate new database credentials
+          vault write -f database/creds/genesis-role
+          
+          echo "Secrets rotated successfully"
+
+      - name: Audit check
+        if: ${{ github.event.inputs.vault_action == 'audit' }}
+        run: |
+          export VAULT_ADDR="https://${{ secrets.VAULT_ADDR }}"
+          export VAULT_TOKEN="${{ secrets.VAULT_TOKEN }}"
+          
+          # Check Vault status
+          vault status
+          
+          # List audit logs
+          vault list sys/audit
+          
+          echo "Audit completed"
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'helm/genesis-studio'
+          severity: 'CRITICAL,HIGH'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Check Istio configuration
+        run: |
+          istioctl analyze -n ${{ secrets.K8S_NAMESPACE }}
+          istioctl validate -f helm/genesis-studio/templates/istio/
+
+      - name: Check NetworkPolicies
+        run: |
+          kubectl apply --dry-run=client -f helm/genesis-studio/templates/network/ -n ${{ secrets.K8S_NAMESPACE }}
+
+  rollback:
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+
+      - name: Rollback Helm deployment
+        run: |
+          helm rollback genesis-studio -n ${{ secrets.K8S_NAMESPACE }} || true
+
+      - name: Notify on failure
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "Deployment failed for ${{ github.repository }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Deployment Failed* :x:\nRepository: ${{ github.repository }}\nEnvironment: ${{ github.event.inputs.environment || 'staging' }}\nWorkflow: ${{ github.workflow }}\nRun: ${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

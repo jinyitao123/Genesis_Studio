@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neo4j
+  namespace: genesis
+  labels:
+    app: neo4j
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neo4j
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: neo4j
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "2004"
+    spec:
+      serviceAccountName: neo4j
+      containers:
+      - name: neo4j
+        image: neo4j:5.12-community
+        ports:
+        - containerPort: 7474
+          protocol: TCP
+          name: http
+        - containerPort: 7687
+          protocol: TCP
+          name: bolt
+        - containerPort: 2004
+          protocol: TCP
+          name: metrics
+        env:
+        - name: NEO4J_AUTH
+          valueFrom:
+            secretKeyRef:
+              name: genesis-secrets
+              key: neo4j-password
+        - name: NEO4J_dbms_connector_http_listen__address
+          value: "0.0.0.0:7474"
+        - name: NEO4J_dbms_connector_bolt_listen__address
+          value: "0.0.0.0:7687"
+        - name: NEO4J_dbms_metrics_prometheus_enabled
+          value: "true"
+        - name: NEO4J_dbms_metrics_prometheus_endpoint
+          value: "0.0.0.0:2004"
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 4Gi
+          limits:
+            cpu: 4000m
+            memory: 16Gi
+        volumeMounts:
+        - name: neo4j-data
+          mountPath: /data
+        - name: neo4j-conf
+          mountPath: /conf
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: neo4j-data
+        persistentVolumeClaim:
+          claimName: neo4j-pvc
+      - name: neo4j-conf
+        configMap:
+          name: neo4j-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: neo4j
+  namespace: genesis
+  labels:
+    app: neo4j
+spec:
+  ports:
+  - port: 7474
+    targetPort: 7474
+    protocol: TCP
+    name: http
+  - port: 7687
+    targetPort: 7687
+    protocol: TCP
+    name: bolt
+  selector:
+    app: neo4j
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: neo4j-pvc
+  namespace: genesis
+  labels:
+    app: neo4j
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi

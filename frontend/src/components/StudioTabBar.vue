@@ -1,10 +1,5 @@
 <script setup lang="ts">
-type TabId = "graph" | "timeline" | "logic" | "lineage" | "inspector" | "proposals" | "ops";
-
-type TabItem = {
-  id: TabId;
-  label: string;
-};
+import type { TabId, TabItem } from "@/types";
 
 defineProps<{
   modelValue: TabId;

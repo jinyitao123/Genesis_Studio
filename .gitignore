@@ -13,6 +13,7 @@ venv/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+node_modules/
 
 # Environment and local secrets
 .env
@@ -28,6 +29,9 @@ Thumbs.db
 *.log
 *.pid
 nul
+logs/
+reports/
+tests_backup/
 
 # Coverage
 .coverage

@@ -6,6 +6,7 @@ from flask import Flask, jsonify
 
 from .config import load_settings
 from .observability import instrument_flask_app
+from .routes.websocket import init_websocket, socketio
 
 
 def create_app() -> Flask:
@@ -32,5 +33,8 @@ def create_app() -> Flask:
                 "api": "/api/health",
             }
         )
+
+    # Initialize WebSocket
+    init_websocket(app)
 
     return app

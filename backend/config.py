@@ -35,6 +35,8 @@ class Settings:
     oidc_scope: str
     oidc_token_endpoint: str
     oidc_userinfo_endpoint: str
+    search_backend_url: str
+    timeseries_backend_url: str
 
 
 def _to_bool(value: str, default: bool = False) -> bool:
@@ -75,4 +77,6 @@ def load_settings() -> Settings:
         oidc_scope=os.getenv("OIDC_SCOPE", "openid profile email offline_access"),
         oidc_token_endpoint=os.getenv("OIDC_TOKEN_ENDPOINT", ""),
         oidc_userinfo_endpoint=os.getenv("OIDC_USERINFO_ENDPOINT", ""),
+        search_backend_url=os.getenv("SEARCH_BACKEND_URL", ""),
+        timeseries_backend_url=os.getenv("TIMESERIES_BACKEND_URL", ""),
     )

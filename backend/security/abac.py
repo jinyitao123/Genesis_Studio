@@ -144,17 +144,84 @@ class AbacDecision:
     denied_fields: list[str]
 
 
+@dataclass(frozen=True)
+class ABACPolicy:
+    read: dict[str, dict[str, set[str]]]
+    write: dict[str, dict[str, set[str]]]
+
+
 _READ_FIELD_POLICY = _POLICY["read"]
 _WRITE_FIELD_POLICY = _POLICY["write"]
 
 
-def check_write_fields(role: str, resource: str, input_fields: set[str]) -> AbacDecision:
+def check_write_fields(
+    role_or_payload: str | dict[str, object] | None = None,
+    resource_or_role: str | None = None,
+    input_fields: set[str] | list[str] | None = None,
+    *,
+    role: str | None = None,
+    resource: str | None = None,
+) -> AbacDecision:
+    if role is not None or resource is not None:
+        resolved_role = role or ""
+        resolved_resource = resource or ""
+        field_set = set(input_fields or set())
+        allowed_fields = _WRITE_FIELD_POLICY.get(resolved_resource, {}).get(resolved_role, set())
+        denied = sorted(field_set - allowed_fields)
+        return AbacDecision(allowed=len(denied) == 0, denied_fields=denied)
+
+    if role_or_payload is None or resource_or_role is None:
+        return AbacDecision(allowed=False, denied_fields=[])
+
+    if isinstance(role_or_payload, dict):
+        payload = role_or_payload
+        resolved_role = resource_or_role
+        allowed_fields = set(input_fields or set())
+        denied = sorted(set(payload.keys()) - allowed_fields)
+        role_allowed = resolved_role in {"Admin", "Designer", "Operator"}
+        return AbacDecision(allowed=role_allowed and len(denied) == 0, denied_fields=denied)
+
+    role = role_or_payload
+    resource = resource_or_role
+    field_set = set(input_fields or set())
     allowed_fields = _WRITE_FIELD_POLICY.get(resource, {}).get(role, set())
-    denied = sorted(input_fields - allowed_fields)
+    denied = sorted(field_set - allowed_fields)
     return AbacDecision(allowed=len(denied) == 0, denied_fields=denied)
 
 
-def filter_read_fields(role: str, resource: str, row: dict[str, object]) -> dict[str, object]:
+def filter_read_fields(
+    role_or_row: str | dict[str, object] | None = None,
+    resource_or_role: str | None = None,
+    row: dict[str, object] | None = None,
+    *,
+    role: str | None = None,
+    resource: str | None = None,
+) -> dict[str, object]:
+    if role is not None or resource is not None:
+        if row is None:
+            return {}
+        resolved_role = role or ""
+        resolved_resource = resource or ""
+        allowed_fields = _READ_FIELD_POLICY.get(resolved_resource, {}).get(resolved_role, set())
+        if not allowed_fields:
+            return {}
+        return {key: value for key, value in row.items() if key in allowed_fields}
+
+    if role_or_row is None or resource_or_role is None:
+        return {}
+
+    if isinstance(role_or_row, dict):
+        source = role_or_row
+        role = resource_or_role
+        allowed_fields = _READ_FIELD_POLICY.get("object_type", {}).get(role, set())
+        if not allowed_fields:
+            return {}
+        return {key: value for key, value in source.items() if key in allowed_fields}
+
+    role = role_or_row
+    resource = resource_or_role
+    if row is None:
+        return {}
     allowed_fields = _READ_FIELD_POLICY.get(resource, {}).get(role, set())
     if not allowed_fields:
         return {}

@@ -1,9 +1,17 @@
+import { storeToRefs } from 'pinia';
+import { useAuthStore } from '@/stores/useAuthStore';
+
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:18080";
 
 export async function apiGet<T>(path: string, token?: string): Promise<T> {
+  // Auto-fetch token from authStore if not provided
+  const authStore = useAuthStore();
+  const { token: authToken } = storeToRefs(authStore);
+  const effectiveToken = token || authToken.value;
+
   const headers: Record<string, string> = {};
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+  if (effectiveToken) {
+    headers.Authorization = `Bearer ${effectiveToken}`;
   }
   const response = await fetch(`${API_BASE}${path}`, { headers });
   if (!response.ok) {
@@ -17,11 +25,16 @@ export async function apiPost<T>(
   body: Record<string, unknown>,
   token?: string,
 ): Promise<T> {
+  // Auto-fetch token from authStore if not provided
+  const authStore = useAuthStore();
+  const { token: authToken } = storeToRefs(authStore);
+  const effectiveToken = token || authToken.value;
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+  if (effectiveToken) {
+    headers.Authorization = `Bearer ${effectiveToken}`;
   }
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",

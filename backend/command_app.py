@@ -80,7 +80,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _seed_proposals() -> dict[str, dict[str, str]]:
+def _fallback_seed_proposals() -> dict[str, dict[str, str]]:
     now = _now_iso()
     return {
         "prop-ontology-opt-1": {
@@ -102,7 +102,9 @@ def _seed_proposals() -> dict[str, dict[str, str]]:
     }
 
 
-_proposal_states: dict[str, dict[str, str]] = _seed_proposals()
+_fallback_proposals_state: dict[str, dict[str, str]] = _fallback_seed_proposals()
+
+
 instrument_fastapi_app(command_app, service_name="command-api")
 
 
@@ -248,6 +250,38 @@ class ServicePublishRequest(BaseModel):
     message: str
 
 
+class ComplianceActionRequest(BaseModel):
+    subject_id: str
+
+
+class ComplianceActionResponse(BaseModel):
+    status: str
+    subject_id: str
+    record: dict[str, str]
+    request_id: str
+
+
+class GraphNodeUpsertRequest(BaseModel):
+    node_id: str
+    label: str
+
+
+class GraphNodeDeleteRequest(BaseModel):
+    node_id: str
+
+
+class GraphEdgeUpsertRequest(BaseModel):
+    source_id: str
+    target_id: str
+    label: str
+
+
+class GraphEdgeDeleteRequest(BaseModel):
+    source_id: str
+    target_id: str
+    label: str
+
+
 def _evaluate_dispatch_gates(payload: ActionDispatch, user: AuthUser) -> list[LogicGateResult]:
     source_target_ok = True
     if payload.source_id and payload.target_id:
@@ -289,6 +323,11 @@ def _current_user(credentials: HTTPAuthorizationCredentials = Depends(security))
 
 def _require_write_role(user: AuthUser) -> None:
     if user.role not in {"Admin", "Designer", "Operator"}:
+        raise HTTPException(status_code=403, detail="insufficient role")
+
+
+def _require_compliance_role(user: AuthUser) -> None:
+    if user.role not in {"Admin", "Designer"}:
         raise HTTPException(status_code=403, detail="insufficient role")
 
 
@@ -593,6 +632,88 @@ def oidc_callback(payload: OidcCallbackRequest) -> OidcCallbackResponse:
         role=role,
     )
     record_http_request("/api/auth/callback", 200)
+    return response
+
+
+@command_app.post("/api/compliance/export", response_model=ComplianceActionResponse)
+def compliance_export(payload: ComplianceActionRequest, user: AuthUser = Depends(_current_user)) -> ComplianceActionResponse:
+    _require_compliance_role(user)
+    subject_id = payload.subject_id.strip()
+    if not subject_id:
+        raise HTTPException(status_code=400, detail="subject_id is required")
+
+    settings = load_settings()
+    repo = create_repository(settings)
+    try:
+        if hasattr(repo, "create_compliance_record"):
+            record = repo.create_compliance_record("export", subject_id, user.username)
+        else:
+            record = {
+                "action": "export",
+                "subject_id": subject_id,
+                "actor": user.username,
+                "recorded_at": _now_iso(),
+            }
+    finally:
+        repo.close()
+
+    _ = append_signed_audit_entry(
+        {
+            "event_type": "ComplianceExportRequested",
+            "correlation_id": f"compliance-export:{subject_id}",
+            "actor": user.username,
+            "service": "command-api",
+            "payload": record,
+        }
+    )
+    response = ComplianceActionResponse(
+        status="accepted",
+        subject_id=subject_id,
+        record=record,
+        request_id=f"compliance-export:{subject_id}",
+    )
+    record_http_request("/api/compliance/export", 200)
+    return response
+
+
+@command_app.post("/api/compliance/delete", response_model=ComplianceActionResponse)
+def compliance_delete(payload: ComplianceActionRequest, user: AuthUser = Depends(_current_user)) -> ComplianceActionResponse:
+    _require_compliance_role(user)
+    subject_id = payload.subject_id.strip()
+    if not subject_id:
+        raise HTTPException(status_code=400, detail="subject_id is required")
+
+    settings = load_settings()
+    repo = create_repository(settings)
+    try:
+        if hasattr(repo, "create_compliance_record"):
+            record = repo.create_compliance_record("delete", subject_id, user.username)
+        else:
+            record = {
+                "action": "delete",
+                "subject_id": subject_id,
+                "actor": user.username,
+                "recorded_at": _now_iso(),
+            }
+    finally:
+        repo.close()
+
+    _ = append_signed_audit_entry(
+        {
+            "event_type": "ComplianceDeleteRequested",
+            "correlation_id": f"compliance-delete:{subject_id}",
+            "actor": user.username,
+            "service": "command-api",
+            "payload": record,
+        }
+    )
+    response = ComplianceActionResponse(
+        status="accepted",
+        subject_id=subject_id,
+        record=record,
+        request_id=f"compliance-delete:{subject_id}",
+    )
+    record_http_request("/api/compliance/delete", 200)
     return response
 
 
@@ -950,29 +1071,67 @@ def apply_migration(payload: MigrationApplyRequest, user: AuthUser = Depends(_cu
 @command_app.get("/api/command/proposals", response_model=list[ProposalState])
 def list_proposals(user: AuthUser = Depends(_current_user)) -> list[ProposalState]:
     _require_write_role(user)
-    rows = [ProposalState(**payload) for payload in _proposal_states.values()]
+    settings = load_settings()
+    repo = create_repository(settings)
+    try:
+        if hasattr(repo, "seed_demo_proposals") and hasattr(repo, "list_proposals"):
+            repo.seed_demo_proposals()
+            rows = [ProposalState(**payload) for payload in repo.list_proposals()]
+        else:
+            rows = [ProposalState(**payload) for payload in _fallback_proposals_state.values()]
+    finally:
+        repo.close()
     rows.sort(key=lambda item: item.proposal_id)
     record_http_request("/api/command/proposals", 200)
     return rows
 
 
 def _proposal_action(proposal_id: str, action: str, actor: str) -> ProposalActionResponse:
-    proposal = _proposal_states.get(proposal_id)
-    if proposal is None:
+    settings = load_settings()
+    repo = create_repository(settings)
+    status = ""
+    updated: dict[str, str] | None = None
+    try:
+        if hasattr(repo, "seed_demo_proposals") and hasattr(repo, "list_proposals") and hasattr(repo, "set_proposal_status"):
+            repo.seed_demo_proposals()
+            all_rows = repo.list_proposals()
+            proposal = next((item for item in all_rows if item["proposal_id"] == proposal_id), None)
+            if proposal is None:
+                raise HTTPException(status_code=404, detail="proposal not found")
+
+            status = proposal["status"]
+            if action == "apply":
+                status = "applied"
+            elif action == "reject":
+                status = "rejected"
+            elif action == "rollback":
+                if proposal["status"] != "applied":
+                    raise HTTPException(status_code=409, detail="proposal is not applied")
+                status = "rolled_back"
+
+            updated = repo.set_proposal_status(proposal_id, status)
+        else:
+            proposal = _fallback_proposals_state.get(proposal_id)
+            if proposal is None:
+                raise HTTPException(status_code=404, detail="proposal not found")
+            status = proposal["status"]
+            if action == "apply":
+                status = "applied"
+            elif action == "reject":
+                status = "rejected"
+            elif action == "rollback":
+                if proposal["status"] != "applied":
+                    raise HTTPException(status_code=409, detail="proposal is not applied")
+                status = "rolled_back"
+            proposal["status"] = status
+            proposal["updated_at"] = _now_iso()
+            updated = proposal
+    finally:
+        repo.close()
+
+    if updated is None:
         raise HTTPException(status_code=404, detail="proposal not found")
 
-    status = proposal["status"]
-    if action == "apply":
-        status = "applied"
-    elif action == "reject":
-        status = "rejected"
-    elif action == "rollback":
-        if proposal["status"] != "applied":
-            raise HTTPException(status_code=409, detail="proposal is not applied")
-        status = "rolled_back"
-
-    proposal["status"] = status
-    proposal["updated_at"] = _now_iso()
     _ = publish_domain_event(
         {
             "event_type": "ProposalStateChanged",
@@ -984,7 +1143,121 @@ def _proposal_action(proposal_id: str, action: str, actor: str) -> ProposalActio
             "causation_id": f"{proposal_id}:{action}",
         }
     )
+    
+    # Broadcast via WebSocket (lazy import to avoid circular dependency)
+    try:
+        from .routes.websocket import broadcast_proposal_update
+        broadcast_proposal_update(
+            proposal_id=proposal_id,
+            status=status,
+            action=action,
+            actor=actor,
+        )
+    except ImportError:
+        pass
+    
     return ProposalActionResponse(proposal_id=proposal_id, status=status)
+
+
+@command_app.post("/api/command/graph/node/upsert")
+def upsert_graph_node(payload: GraphNodeUpsertRequest, user: AuthUser = Depends(_current_user)) -> dict[str, str]:
+    _require_write_role(user)
+    settings = load_settings()
+    repo = create_repository(settings)
+    try:
+        result = repo.upsert_graph_node(payload.node_id, payload.label, user.username)
+    finally:
+        repo.close()
+
+    _ = publish_domain_event(
+        {
+            "event_type": "GraphNodeUpserted",
+            "node_id": payload.node_id,
+            "actor": user.username,
+            "correlation_id": payload.node_id,
+            "causation_id": payload.node_id,
+        }
+    )
+    record_http_request("/api/command/graph/node/upsert", 200)
+    return result
+
+
+@command_app.post("/api/command/graph/node/delete")
+def delete_graph_node(payload: GraphNodeDeleteRequest, user: AuthUser = Depends(_current_user)) -> dict[str, str | bool]:
+    _require_write_role(user)
+    settings = load_settings()
+    repo = create_repository(settings)
+    try:
+        deleted = repo.delete_graph_node(payload.node_id)
+    finally:
+        repo.close()
+
+    _ = publish_domain_event(
+        {
+            "event_type": "GraphNodeDeleted",
+            "node_id": payload.node_id,
+            "actor": user.username,
+            "correlation_id": payload.node_id,
+            "causation_id": payload.node_id,
+        }
+    )
+    record_http_request("/api/command/graph/node/delete", 200)
+    return {"node_id": payload.node_id, "deleted": deleted}
+
+
+@command_app.post("/api/command/graph/edge/upsert")
+def upsert_graph_edge(payload: GraphEdgeUpsertRequest, user: AuthUser = Depends(_current_user)) -> dict[str, str]:
+    _require_write_role(user)
+    settings = load_settings()
+    repo = create_repository(settings)
+    try:
+        result = repo.upsert_graph_edge(payload.source_id, payload.target_id, payload.label, user.username)
+    finally:
+        repo.close()
+
+    _ = publish_domain_event(
+        {
+            "event_type": "GraphEdgeUpserted",
+            "source_id": payload.source_id,
+            "target_id": payload.target_id,
+            "label": payload.label,
+            "actor": user.username,
+            "correlation_id": f"{payload.source_id}:{payload.target_id}:{payload.label}",
+            "causation_id": f"{payload.source_id}:{payload.target_id}:{payload.label}",
+        }
+    )
+    record_http_request("/api/command/graph/edge/upsert", 200)
+    return result
+
+
+@command_app.post("/api/command/graph/edge/delete")
+def delete_graph_edge(payload: GraphEdgeDeleteRequest, user: AuthUser = Depends(_current_user)) -> dict[str, str | bool]:
+    _require_write_role(user)
+    settings = load_settings()
+    repo = create_repository(settings)
+    try:
+        deleted = repo.delete_graph_edge(payload.source_id, payload.target_id, payload.label)
+    finally:
+        repo.close()
+
+    _ = publish_domain_event(
+        {
+            "event_type": "GraphEdgeDeleted",
+            "source_id": payload.source_id,
+            "target_id": payload.target_id,
+            "label": payload.label,
+            "actor": user.username,
+            "correlation_id": f"{payload.source_id}:{payload.target_id}:{payload.label}",
+            "causation_id": f"{payload.source_id}:{payload.target_id}:{payload.label}",
+        }
+    )
+    record_http_request("/api/command/graph/edge/delete", 200)
+    return {
+        "source_id": payload.source_id,
+        "target_id": payload.target_id,
+        "label": payload.label,
+        "deleted": deleted,
+    }
 
 
 @command_app.post("/api/command/proposals/{proposal_id}/apply", response_model=ProposalActionResponse)
@@ -1168,6 +1441,22 @@ def service_publish_notification(
     _require_write_role(user)
     service = NotificationService()
     result = service.publish(payload.channel, payload.message)
+    
+    # Broadcast via WebSocket (lazy import to avoid circular dependency)
+    try:
+        from .routes.websocket import broadcast_notification
+        broadcast_notification(
+            event_type="NotificationPublished",
+            payload={
+                "channel": payload.channel,
+                "message": payload.message,
+                "actor": user.username,
+            },
+            channel="notifications",
+        )
+    except ImportError:
+        pass
+    
     _record_service_adapter_audit(
         actor=user.username,
         operation="service_publish_notification",
@@ -1221,3 +1510,112 @@ def grpc_projection(payload: GrpcProjectionRequest, user: AuthUser = Depends(_cu
         raise HTTPException(status_code=503, detail=f"grpc projection unavailable: {exc}") from exc
     record_http_request("/api/command/grpc/projection", 200)
     return {"projection_id": projection_id}
+
+
+# FastAPI WebSocket endpoint for real-time updates
+import asyncio
+from collections import defaultdict
+from fastapi import WebSocket, WebSocketDisconnect
+
+_websocket_connections: dict[str, set[WebSocket]] = defaultdict(set)
+
+
+@command_app.websocket("/ws/events")
+async def websocket_events(websocket: WebSocket) -> None:
+    """WebSocket endpoint for real-time event streaming."""
+    await websocket.accept()
+    client_id = f"client_{id(websocket)}"
+    channel = "events"
+
+    _websocket_connections[channel].add(websocket)
+
+    try:
+        while True:
+            # Keep connection alive and receive messages
+            data = await websocket.receive_text()
+            # Echo back for heartbeat
+            await websocket.send_json({"type": "ping", "client_id": client_id})
+    except WebSocketDisconnect:
+        _websocket_connections[channel].discard(websocket)
+
+
+@command_app.websocket("/ws/notifications")
+async def websocket_notifications(websocket: WebSocket) -> None:
+    """WebSocket endpoint for notification streaming."""
+    await websocket.accept()
+    client_id = f"client_{id(websocket)}"
+    channel = "notifications"
+
+    _websocket_connections[channel].add(websocket)
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_json({"type": "ping", "client_id": client_id})
+    except WebSocketDisconnect:
+        _websocket_connections[channel].discard(websocket)
+
+
+@command_app.websocket("/ws/proposals")
+async def websocket_proposals(websocket: WebSocket) -> None:
+    """WebSocket endpoint for proposal updates."""
+    await websocket.accept()
+    client_id = f"client_{id(websocket)}"
+    channel = "proposals"
+
+    _websocket_connections[channel].add(websocket)
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_json({"type": "ping", "client_id": client_id})
+    except WebSocketDisconnect:
+        _websocket_connections[channel].discard(websocket)
+
+
+async def broadcast_to_websocket(channel: str, message: dict[str, object]) -> None:
+    """Broadcast message to all WebSocket connections for a channel."""
+    connections = _websocket_connections.get(channel, set()).copy()
+    for websocket in connections:
+        try:
+            await websocket.send_json(message)
+        except Exception:
+            _websocket_connections[channel].discard(websocket)
+
+
+# Generic WebSocket endpoint for general notifications
+@command_app.websocket("/ws")
+async def websocket_generic(websocket: WebSocket) -> None:
+    """Generic WebSocket endpoint for real-time notifications."""
+    await websocket.accept()
+    client_id = f"client_{id(websocket)}"
+    channel = "notifications"  # Default to notifications channel
+    
+    _websocket_connections[channel].add(websocket)
+    
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Handle subscription/unsubscription messages
+            try:
+                msg = json.loads(data)
+                if msg.get("action") == "subscribe":
+                    # Subscribe to channels
+                    channels = msg.get("channels", [])
+                    for ch in channels:
+                        _websocket_connections[ch].add(websocket)
+                elif msg.get("action") == "unsubscribe":
+                    # Unsubscribe from channels
+                    channels = msg.get("channels", [])
+                    for ch in channels:
+                        _websocket_connections[ch].discard(websocket)
+                else:
+                    # Echo back for heartbeat
+                    await websocket.send_json({"type": "pong", "client_id": client_id})
+            except json.JSONDecodeError:
+                # Not JSON, treat as heartbeat
+                await websocket.send_json({"type": "pong", "client_id": client_id})
+    except WebSocketDisconnect:
+        # Remove from all channels on disconnect
+        for ch in _websocket_connections:
+            _websocket_connections[ch].discard(websocket)

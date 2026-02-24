@@ -2,14 +2,29 @@ from __future__ import annotations
 
 from ..config import load_settings
 from ..ontology.deps import create_repository
+from .backend_clients import SearchBackendClient
 
 
 class SearchService:
     service_name = "search-service"
 
-    def search(self, query: str) -> dict[str, str | int | list[dict[str, str]]]:
-        needle = query.strip().lower()
+    def __init__(self) -> None:
+        self._backend = SearchBackendClient()
 
+    def search(self, query: str) -> dict[str, str | int | list[dict[str, str]]]:
+        # Try external backend first if configured
+        if self._backend.is_configured():
+            external_result = self._backend.search(query)
+            if external_result is not None:
+                return {
+                    "service": self.service_name,
+                    "query": query,
+                    "hits": external_result["hits"],
+                    "results": external_result["results"],
+                }
+
+        # Fall back to local repository search
+        needle = query.strip().lower()
         settings = load_settings()
         repo = create_repository(settings)
         try:

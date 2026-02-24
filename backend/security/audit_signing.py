@@ -169,3 +169,27 @@ def verify_signed_audit_ledger() -> dict[str, Any]:
         "reason": "ok",
         "broken_at": None,
     }
+
+
+def sign_audit_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    payload_hash = _payload_digest(entry)
+    signature = hmac.new(_signing_secret().encode("utf-8"), payload_hash.encode("utf-8"), hashlib.sha256).hexdigest()
+    signed = dict(entry)
+    signed["signature"] = signature
+    signed["payload_hash"] = payload_hash
+    return signed
+
+
+def verify_audit_entry(entry: dict[str, Any]) -> bool:
+    payload_hash = entry.get("payload_hash")
+    signature = entry.get("signature")
+    if not isinstance(payload_hash, str) or not isinstance(signature, str):
+        return False
+
+    payload = {key: value for key, value in entry.items() if key not in {"signature", "payload_hash"}}
+    computed_hash = _payload_digest(payload)
+    if computed_hash != payload_hash:
+        return False
+
+    expected = hmac.new(_signing_secret().encode("utf-8"), payload_hash.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)

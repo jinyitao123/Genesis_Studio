@@ -393,6 +393,321 @@ class Neo4jOntologyRepository:
             return None
         return self._to_action_event(row)
 
+    def seed_demo_object_types(self) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._driver.session() as session:
+            _ = session.run(
+                """
+                MERGE (a:ObjectType {type_uri: 'com.genesis.unit.Drone'})
+                SET a.display_name = coalesce(a.display_name, 'Drone'),
+                    a.parent_type = coalesce(a.parent_type, 'com.genesis.unit.AirUnit'),
+                    a.tags = coalesce(a.tags, ['air', 'light']),
+                    a.created_at = coalesce(a.created_at, $created_at)
+                MERGE (b:ObjectType {type_uri: 'com.genesis.unit.Tank'})
+                SET b.display_name = coalesce(b.display_name, 'Tank'),
+                    b.parent_type = coalesce(b.parent_type, 'com.genesis.unit.GroundUnit'),
+                    b.tags = coalesce(b.tags, ['ground', 'heavy']),
+                    b.created_at = coalesce(b.created_at, $created_at)
+                """,
+                created_at=now,
+            )
+
+    def seed_demo_proposals(self) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._driver.session() as session:
+            _ = session.run(
+                """
+                MERGE (p:Proposal {proposal_id: 'prop-ontology-opt-1'})
+                SET p.title = coalesce(p.title, 'Optimize ontology migration gates'),
+                    p.intent = coalesce(p.intent, 'Improve schema migration safety checks'),
+                    p.status = coalesce(p.status, 'draft'),
+                    p.created_at = coalesce(p.created_at, $created_at),
+                    p.updated_at = coalesce(p.updated_at, $created_at)
+                MERGE (q:Proposal {proposal_id: 'prop-routing-hardening-1'})
+                SET q.title = coalesce(q.title, 'Harden event routing lineage'),
+                    q.intent = coalesce(q.intent, 'Strengthen correlation and replay controls'),
+                    q.status = coalesce(q.status, 'draft'),
+                    q.created_at = coalesce(q.created_at, $created_at),
+                    q.updated_at = coalesce(q.updated_at, $created_at)
+                """,
+                created_at=now,
+            )
+
+    def list_proposals(self) -> list[dict[str, str]]:
+        with self._driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (p:Proposal)
+                RETURN p.proposal_id AS proposal_id,
+                       p.title AS title,
+                       p.intent AS intent,
+                       p.status AS status,
+                       p.created_at AS created_at,
+                       p.updated_at AS updated_at
+                ORDER BY p.proposal_id
+                """
+            )
+            return [
+                {
+                    "proposal_id": str(row["proposal_id"]),
+                    "title": str(row["title"]),
+                    "intent": str(row["intent"]),
+                    "status": str(row["status"]),
+                    "created_at": str(row["created_at"]),
+                    "updated_at": str(row["updated_at"]),
+                }
+                for row in rows
+            ]
+
+    def set_proposal_status(self, proposal_id: str, status: str) -> dict[str, str] | None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._driver.session() as session:
+            row = session.run(
+                """
+                MATCH (p:Proposal {proposal_id: $proposal_id})
+                SET p.status = $status,
+                    p.updated_at = $updated_at
+                RETURN p.proposal_id AS proposal_id,
+                       p.title AS title,
+                       p.intent AS intent,
+                       p.status AS status,
+                       p.created_at AS created_at,
+                       p.updated_at AS updated_at
+                LIMIT 1
+                """,
+                proposal_id=proposal_id,
+                status=status,
+                updated_at=now,
+            ).single()
+
+        if row is None:
+            return None
+
+        return {
+            "proposal_id": str(row["proposal_id"]),
+            "title": str(row["title"]),
+            "intent": str(row["intent"]),
+            "status": str(row["status"]),
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
+        }
+
+    def create_compliance_record(self, action: str, subject_id: str, actor: str) -> dict[str, str]:
+        now = datetime.now(timezone.utc).isoformat()
+        record_id = str(uuid4())
+        with self._driver.session() as session:
+            row = session.run(
+                """
+                CREATE (c:ComplianceRecord {
+                    record_id: $record_id,
+                    action: $action,
+                    subject_id: $subject_id,
+                    actor: $actor,
+                    recorded_at: $recorded_at
+                })
+                RETURN c.action AS action,
+                       c.subject_id AS subject_id,
+                       c.actor AS actor,
+                       c.recorded_at AS recorded_at
+                """,
+                record_id=record_id,
+                action=action,
+                subject_id=subject_id,
+                actor=actor,
+                recorded_at=now,
+            ).single()
+
+        if row is None:
+            raise RuntimeError("failed to create compliance record")
+
+        return {
+            "action": str(row["action"]),
+            "subject_id": str(row["subject_id"]),
+            "actor": str(row["actor"]),
+            "recorded_at": str(row["recorded_at"]),
+        }
+
+    def list_compliance_records(self, limit: int = 200) -> list[dict[str, str]]:
+        with self._driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (c:ComplianceRecord)
+                RETURN c.action AS action,
+                       c.subject_id AS subject_id,
+                       c.actor AS actor,
+                       c.recorded_at AS recorded_at
+                ORDER BY c.recorded_at DESC
+                LIMIT $limit
+                """,
+                limit=limit,
+            )
+            return [
+                {
+                    "action": str(row["action"]),
+                    "subject_id": str(row["subject_id"]),
+                    "actor": str(row["actor"]),
+                    "recorded_at": str(row["recorded_at"]),
+                }
+                for row in rows
+            ]
+
+    def seed_demo_graph(self) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._driver.session() as session:
+            _ = session.run(
+                """
+                MERGE (a:GraphNode {node_id: 'unit.drone'})
+                SET a.label = coalesce(a.label, '无人机'),
+                    a.updated_at = coalesce(a.updated_at, $updated_at),
+                    a.created_at = coalesce(a.created_at, $updated_at)
+                MERGE (b:GraphNode {node_id: 'unit.tank'})
+                SET b.label = coalesce(b.label, '坦克'),
+                    b.updated_at = coalesce(b.updated_at, $updated_at),
+                    b.created_at = coalesce(b.created_at, $updated_at)
+                MERGE (c:GraphNode {node_id: 'unit.command'})
+                SET c.label = coalesce(c.label, '指挥车'),
+                    c.updated_at = coalesce(c.updated_at, $updated_at),
+                    c.created_at = coalesce(c.created_at, $updated_at)
+                MERGE (a)-[r1:GRAPH_LINK {label: '侦查'}]->(b)
+                SET r1.updated_at = coalesce(r1.updated_at, $updated_at)
+                MERGE (c)-[r2:GRAPH_LINK {label: '指挥'}]->(a)
+                SET r2.updated_at = coalesce(r2.updated_at, $updated_at)
+                """,
+                updated_at=now,
+            )
+
+    def upsert_graph_node(self, node_id: str, label: str, actor: str) -> dict[str, str]:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._driver.session() as session:
+            row = session.run(
+                """
+                MERGE (n:GraphNode {node_id: $node_id})
+                SET n.label = $label,
+                    n.updated_by = $actor,
+                    n.updated_at = $updated_at,
+                    n.created_at = coalesce(n.created_at, $updated_at)
+                RETURN n.node_id AS node_id,
+                       n.label AS label
+                """,
+                node_id=node_id,
+                label=label,
+                actor=actor,
+                updated_at=now,
+            ).single()
+
+        if row is None:
+            raise RuntimeError("failed to upsert graph node")
+        return {
+            "node_id": str(row["node_id"]),
+            "label": str(row["label"]),
+        }
+
+    def delete_graph_node(self, node_id: str) -> bool:
+        with self._driver.session() as session:
+            row = session.run(
+                """
+                MATCH (n:GraphNode {node_id: $node_id})
+                WITH n, count(n) AS cnt
+                DETACH DELETE n
+                RETURN cnt AS deleted
+                """,
+                node_id=node_id,
+            ).single()
+
+        if row is None:
+            return False
+        return int(row["deleted"] or 0) > 0
+
+    def upsert_graph_edge(self, source_id: str, target_id: str, label: str, actor: str) -> dict[str, str]:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._driver.session() as session:
+            row = session.run(
+                """
+                MERGE (s:GraphNode {node_id: $source_id})
+                ON CREATE SET s.label = $source_id, s.created_at = $updated_at
+                SET s.updated_at = $updated_at
+                MERGE (t:GraphNode {node_id: $target_id})
+                ON CREATE SET t.label = $target_id, t.created_at = $updated_at
+                SET t.updated_at = $updated_at
+                MERGE (s)-[r:GRAPH_LINK {label: $label}]->(t)
+                SET r.updated_at = $updated_at,
+                    r.updated_by = $actor
+                RETURN s.node_id AS source_id,
+                       t.node_id AS target_id,
+                       r.label AS label
+                """,
+                source_id=source_id,
+                target_id=target_id,
+                label=label,
+                actor=actor,
+                updated_at=now,
+            ).single()
+
+        if row is None:
+            raise RuntimeError("failed to upsert graph edge")
+        return {
+            "source_id": str(row["source_id"]),
+            "target_id": str(row["target_id"]),
+            "label": str(row["label"]),
+        }
+
+    def delete_graph_edge(self, source_id: str, target_id: str, label: str) -> bool:
+        with self._driver.session() as session:
+            row = session.run(
+                """
+                MATCH (:GraphNode {node_id: $source_id})-[r:GRAPH_LINK {label: $label}]->(:GraphNode {node_id: $target_id})
+                WITH r, count(r) AS cnt
+                DELETE r
+                RETURN cnt AS deleted
+                """,
+                source_id=source_id,
+                target_id=target_id,
+                label=label,
+            ).single()
+
+        if row is None:
+            return False
+        return int(row["deleted"] or 0) > 0
+
+    def list_graph_nodes(self) -> list[dict[str, str]]:
+        with self._driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (n:GraphNode)
+                RETURN n.node_id AS node_id,
+                       n.label AS label
+                ORDER BY n.node_id
+                """
+            )
+            return [
+                {
+                    "node_id": str(row["node_id"]),
+                    "label": str(row["label"]),
+                }
+                for row in rows
+            ]
+
+    def list_graph_edges(self) -> list[dict[str, str]]:
+        with self._driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (s:GraphNode)-[r:GRAPH_LINK]->(t:GraphNode)
+                RETURN s.node_id AS source_id,
+                       t.node_id AS target_id,
+                       r.label AS label
+                ORDER BY s.node_id, t.node_id, r.label
+                """
+            )
+            return [
+                {
+                    "edge_id": f"{row['source_id']}:{row['target_id']}:{row['label']}",
+                    "source_id": str(row["source_id"]),
+                    "target_id": str(row["target_id"]),
+                    "label": str(row["label"]),
+                }
+                for row in rows
+            ]
+
     @staticmethod
     def _to_action_event(row: Any) -> ActionEvent:
         return ActionEvent(

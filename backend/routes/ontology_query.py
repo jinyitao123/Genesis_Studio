@@ -93,6 +93,38 @@ def list_events():
         repo.close()
 
 
+@ontology_query_bp.get("/query/graph")
+def graph_snapshot():
+    settings = current_app.config["SETTINGS"]
+    repo = create_repository(settings)
+    try:
+        nodes: list[dict[str, str]] = []
+        edges: list[dict[str, str]] = []
+        if hasattr(repo, "list_graph_nodes") and hasattr(repo, "list_graph_edges"):
+            nodes = repo.list_graph_nodes()
+            edges = repo.list_graph_edges()
+
+        if not nodes and not edges:
+            object_types = repo.list_object_types()
+            events = repo.list_events()
+            nodes = [{"node_id": item.type_uri, "label": item.display_name} for item in object_types]
+            edges = [
+                {
+                    "edge_id": row.event_id,
+                    "source_id": str(row.source_id),
+                    "target_id": str(row.target_id),
+                    "label": row.action_id,
+                }
+                for row in events
+                if row.source_id and row.target_id
+            ]
+        response = jsonify({"nodes": nodes, "edges": edges})
+        record_http_request("/api/query/graph", 200)
+        return response
+    finally:
+        repo.close()
+
+
 @ontology_query_bp.get("/query/projections/latest")
 def latest_projection():
     settings = current_app.config["SETTINGS"]
